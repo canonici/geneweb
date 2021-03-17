@@ -24,8 +24,10 @@ type sosa_t =
 let print_base_loop conf base p =
   Output.printf conf
     (fcapitale (ftransl conf "loop in database: %s is his/her own ancestor"))
-    (Util.update_family_loop conf base p (Gutil.designation base p));
-  Output.print_string conf ".\n";
+    ((((Gutil.designation base p |> Util.escape_html) :> Adef.safe_string)
+      |> Util.update_family_loop conf base p
+      : Adef.safe_string :> string));
+  Output.print_sstring conf ".\n";
   Hutil.trailer conf;
   exit 2
 
@@ -33,7 +35,7 @@ let init_sosa_t conf base sosa_ref =
   let tstab =
     try Util.create_topological_sort conf base
     with Consang.TopologicalSortError p ->
-      let title _ = Output.print_string conf (Utf8.capitalize_fst (transl conf "error")) in
+      let title _ = Output.print_sstring conf (Utf8.capitalize_fst (transl conf "error")) in
       Hutil.rheader conf title;
       print_base_loop conf base p
   in
@@ -313,32 +315,47 @@ let print_sosa conf base p link =
   let sosa_num = get_sosa_person p in
   if Sosa.gt sosa_num Sosa.zero then
     match Util.find_sosa_ref conf base with
-      Some ref ->
-        if not link then ()
-        else
-          begin let sosa_link =
-            let i1 = string_of_iper (get_iper p) in
-            let i2 = string_of_iper (get_iper ref) in
-            let b2 = Sosa.to_string sosa_num in
-            "m=RL&i1=" ^ i1 ^ "&i2=" ^ i2 ^ "&b1=1&b2=" ^ b2
-          in
-            Output.printf conf "<a href=\"%s%s\" style=\"text-decoration:none\">"
-              (commd conf) sosa_link
-          end;
-        let title =
-          if is_hide_names conf ref && not (authorized_age conf base ref) then
-            ""
-          else
-            let direct_ancestor =
-              Name.strip_c (p_first_name base ref) '"' ^ " " ^
-              Name.strip_c (p_surname base ref) '"'
-            in
-            Printf.sprintf (fcapitale (ftransl conf "direct ancestor of %s"))
-              direct_ancestor ^
-            Printf.sprintf ", Sosa: %s"
-              (Sosa.to_string_sep (transl conf "(thousand separator)") sosa_num)
+    | Some r ->
+      if link then begin
+        let sosa_link =
+          let i1 = string_of_iper (get_iper p) in
+          let i2 = string_of_iper (get_iper r) in
+          let b2 = Sosa.to_string sosa_num in
+          "m=RL&i1="
+          ^<^ Mutil.encode i1
+          ^^^ "&i2="
+          ^<^ Mutil.encode i2
+          ^^^ "&b1=1&b2="
+          ^<^ Mutil.encode b2
         in
-        Output.printf conf "<img src=\"%s/sosa.png\" alt=\"sosa\" title=\"%s\"/> "
-          (image_prefix conf) title;
-        if not link then () else Output.print_string conf "</a> "
+        Output.print_sstring conf {|<a href="|} ;
+        Output.print_string conf (commd conf) ;
+        Output.print_string conf sosa_link ;
+        Output.print_sstring conf {|" style="text-decoration:none">|}
+      end ;
+      let title =
+        if is_hide_names conf r && not (authorized_age conf base r)
+        then Adef.safe ""
+        else
+          let direct_ancestor =
+            Util.escape_html (p_first_name base r)
+            ^^^ " " ^<^ Util.escape_html (p_surname base r)
+          in
+          ( Printf.sprintf
+              (fcapitale (ftransl conf "direct ancestor of %s"))
+              (direct_ancestor : Adef.escaped_string :> string)
+            |> Adef.safe )
+          ^>^
+          ( ", Sosa"
+            ^ transl conf ":"
+            ^ " "
+            ^ Sosa.to_string_sep (transl conf "(thousand separator)") sosa_num
+          )
+      in
+      Output.print_sstring conf {|<img src="|} ;
+      Output.print_string conf (image_prefix conf) ;
+      Output.print_sstring conf {|/sosa.png" alt="sosa" title="|} ;
+      Output.print_string conf title ;
+      Output.print_sstring conf {|"> |} ;
+      if link then Output.print_sstring conf "</a> "
     | None -> ()

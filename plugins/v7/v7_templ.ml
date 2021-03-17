@@ -3,10 +3,22 @@ open Config
 open TemplAst
 
 let include_begin conf fname =
-  if conf.debug then Output.print_string conf ("\n<!-- begin include " ^ fname ^ " -->\n")
+  if conf.debug
+  then begin
+    Output.print_sstring conf "\n<!-- begin include " ;
+    Output.print_sstring conf fname ;
+    Output.print_sstring conf " -->\n"
+  end
+
+let commd ?excl ?trim conf =
+  (Util.commd ?excl ?trim conf :> string)
 
 let include_end conf fname =
-  if conf.debug then Output.print_string conf ("\n<!-- end include " ^ fname ^ " -->\n")
+  if conf.debug then begin
+    Output.print_sstring conf "\n<!-- end include " ;
+    Output.print_sstring conf fname ;
+    Output.print_sstring conf " -->\n"
+  end
 
 exception Exc_located of loc * exn
 
@@ -45,45 +57,43 @@ let subst_text x v s =
 let rec subst sf = function
   | Atext (loc, s) -> Atext (loc, sf s)
   | Avar (loc, s, sl) ->
-      let s1 = sf s in
-      if sl = [] &&
-         (try let _ = int_of_string s1 in true with Failure _ -> false)
-      then
-        Aint (loc, s1)
-      else begin
-        let sl1 = List.map sf sl in
-        match String.split_on_char '.' s1 with
-        | [_] -> Avar (loc, s1, sl1)
-        | s2 :: sl2 -> Avar (loc, s2, sl2 @ sl1)
-        | _ -> assert false
-      end
+    let s1 = sf s in
+    if sl = [] && try let _ = int_of_string s1 in true with Failure _ -> false
+    then Aint (loc, s1)
+    else begin
+      let sl1 = List.map sf sl in
+      match String.split_on_char '.' s1 with
+      | [_] -> Avar (loc, s1, sl1)
+      | s2 :: sl2 -> Avar (loc, s2, sl2 @ sl1)
+      | _ -> assert false
+    end
   | Atransl (loc, b, s, c) -> Atransl (loc, b, sf s, c)
   | Aconcat (loc, al) -> Aconcat (loc, List.map (subst sf) al)
   | Awid_hei s -> Awid_hei (sf s)
   | Aif (e, alt, ale) -> Aif (subst sf e, substl sf alt, substl sf ale)
   | Aforeach ((loc, s, sl), pl, al) ->
-      (* Dans le cas d'une "compound variable", il faut la décomposer. *)
-      (* Ex: "ancestor.father".family  =>  ancestor.father.family      *)
-      let s1 = sf s in
-      let sl1 = List.map sf sl in
-      let (s, sl) =
-        match String.split_on_char '.' s1 (* Templ_parser.compound_var lex *) with
-        | [_] -> s1, sl1
-        | s2 :: sl2 -> s2, List.rev_append (List.rev_map sf sl2) sl1
-        | _ -> assert false
-      in
-      let lex = Lexing.from_string s1 in
-      let [@warning "-8"] s2 :: sl2 = Templ_parser.compound_var lex in
-      let (s, sl) =
-        if lex.Lexing.lex_curr_p.pos_cnum = String.length s1
-        then s2, sl2 @ sl
-        else s, sl
-      in
-      Aforeach ((loc, s, sl), List.map (substl sf) pl, substl sf al)
+    (* Dans le cas d'une "compound variable", il faut la décomposer. *)
+    (* Ex: "ancestor.father".family  =>  ancestor.father.family      *)
+    let s1 = sf s in
+    let sl1 = List.map sf sl in
+    let (s, sl) =
+      match String.split_on_char '.' s1 (* Templ_parser.compound_var lex *) with
+      | [_] -> s1, sl1
+      | s2 :: sl2 -> s2, List.rev_append (List.rev_map sf sl2) sl1
+      | _ -> assert false
+    in
+    let lex = Lexing.from_string s1 in
+    let [@warning "-8"] s2 :: sl2 = Templ_parser.compound_var lex in
+    let (s, sl) =
+      if lex.Lexing.lex_curr_p.pos_cnum = String.length s1
+      then s2, sl2 @ sl
+      else s, sl
+    in
+    Aforeach ((loc, s, sl), List.map (substl sf) pl, substl sf al)
   | Afor (i, min, max, al) ->
-      Afor (sf i, subst sf min, subst sf max, substl sf al)
+    Afor (sf i, subst sf min, subst sf max, substl sf al)
   | Adefine (f, xl, al, alk) ->
-      Adefine (sf f, List.map sf xl, substl sf al, substl sf alk)
+    Adefine (sf f, List.map sf xl, substl sf al, substl sf alk)
   | Aapply (loc, f, all) -> Aapply (loc, sf f, List.map (substl sf) all)
   | Alet (k, v, al) -> Alet (sf k, substl sf v, substl sf al)
   | Ainclude (file, al) -> Ainclude (sf file, substl sf al)
@@ -128,18 +138,20 @@ let setup_link conf =
     "<a href=\"" ^ s ^ "gwsetup?v=main.htm\">gwsetup</a>"
   with Not_found -> ""
 
+let esc s = (Util.escape_html s :> string)
+
 let rec eval_variable conf =
   function
     ["bvar"; v] -> (try List.assoc v conf.base_env with Not_found -> "")
   | ["evar"; v; "ns"] ->
       begin try
         let vv = List.assoc v (conf.env @ conf.henv) in
-        Util.escape_html (Mutil.gen_decode false vv)
+        Mutil.gen_decode false vv |> esc
       with Not_found -> ""
       end
   | ["evar"; v] ->
       begin match Util.p_getenv (conf.env @ conf.henv) v with
-        Some vv -> Util.escape_html vv
+        Some vv -> esc vv
       | None -> ""
       end
   (* look for evar.vi scanning i down to 0 *)
@@ -192,7 +204,7 @@ and eval_simple_variable conf =
                     "wizard/wizards/friend/friends/exterior" 1)
                  (if conf.wizard then
                     Printf.sprintf "<a href=\"%sm=CONN_WIZ\">%d</a>"
-                      (Util.commd conf) cw
+                      (commd conf) cw
                   else string_of_int cw)
              else "") ^
             (if cf > 0 then
@@ -204,107 +216,36 @@ and eval_simple_variable conf =
           else ""
       | None -> ""
       end
-  | "doctype" -> Util.doctype conf ^ "\n"
-  | "doctype_transitional" ->
-      let doctype =
-        match Util.p_getenv conf.base_env "doctype" with
-          Some ("html-4.01" | "html-4.01-trans") -> "html-4.01-trans"
-        | _ -> "xhtml-1.0-trans"
-      in
-      let conf =
-        {conf with base_env = ("doctype", doctype) :: conf.base_env}
-      in
-      Util.doctype conf ^ "\n"
+  | "doctype" -> (Util.doctype :> string)
   | "highlight" -> conf.highlight
-  | "image_prefix" -> Util.image_prefix conf
+  | "image_prefix" -> (Util.image_prefix conf :> string)
   | "lang" -> conf.lang
   | "left" -> conf.left
   | "nl" -> "\n"
   | "nn" -> ""
   | "plugins" -> (List.fold_left (fun s p -> (Filename.basename p) ^ "," ^ s) "" conf.plugins)
-  | "prefix" -> Util.commd conf
-  | "prefix_2" -> Util.commd_2 conf
-  | "prefix_base" -> Util.prefix_base conf
-  | "prefix_base_2" -> Util.prefix_base_2 conf
+  | "prefix" -> (Util.commd conf :> string)
+  | "prefix_base" -> (Util.prefix_base conf :> string)
   | "prefix_base_password" -> Util.prefix_base_password conf
   | "prefix_base_password_2" -> Util.prefix_base_password_2 conf
-  | "prefix_no_iz" ->
-      let henv =
-        List.fold_left (fun accu k -> List.remove_assoc k accu) conf.henv
-          ["iz"; "nz"; "pz"; "ocz"]
-      in
-      Util.commd {conf with henv = henv}
-  | "prefix_no_templ" ->
-      let henv =
-        List.fold_right
-          (fun (k, v) henv -> if k = "templ" then henv else (k, v) :: henv)
-          conf.henv []
-      in
-      let c = conf.command ^ "?" in
-      List.fold_left (fun c (k, v) ->
-        if ( (k = "oc" || k = "ocz") && v = "0" ) || v = "" then
-          c else c ^ k ^ "=" ^ v ^ "&") c (henv @ conf.senv)
-  | "prefix_no_pmod" ->
-      let henv =
-        List.fold_right
-          (fun (k, v) henv -> if k = "p_mod" then henv else (k, v) :: henv)
-          conf.henv []
-      in
-      let c = conf.command ^ "?" in
-      List.fold_left (fun c (k, v) -> c ^ k ^ "=" ^ v ^ "&") c
-        (henv @ conf.senv)
-  | "prefix_no_wide" ->
-      let henv =
-        List.fold_right
-          (fun (k, v) henv -> if k = "wide" then henv else (k, v) :: henv)
-          conf.henv []
-      in
-      let c = conf.command ^ "?" in
-      List.fold_left (fun c (k, v) ->
-        if ( (k = "oc" || k = "ocz") && v = "0" ) || v = "" then
-          c else c ^ k ^ "=" ^ v ^ "&") c (henv @ conf.senv)
-  | "prefix_no_lang" ->
-      let henv =
-        List.fold_right
-          (fun (k, v) henv -> if k = "lang" then henv else (k, v) :: henv)
-          conf.henv []
-      in
-      let c = conf.command ^ "?" in
-      List.fold_left (fun c (k, v) ->
-          if ( (k = "oc" || k = "ocz") && v = "0") || v = "" then c
-          else c ^ k ^ "=" ^ v ^ "&") c (henv @ conf.senv)
-  | "prefix_no_all" ->
-      let henv =
-        List.fold_right
-          (fun (k, v) henv -> if k = "templ" || k = "p_mod" || k = "wide" then henv else (k, v) :: henv)
-          conf.henv []
-      in
-      let c = conf.command ^ "?" in
-      List.fold_left (fun c (k, v) ->
-        if ( ( k = "oc" || k = "ocz") && v = "0") || v = "" then c
-        else c ^ k ^ "=" ^ v ^ "&") c (henv @ conf.senv)
-  | "referer" -> Util.get_referer conf
+  | "prefix_no_iz" -> commd ~excl:["iz"; "nz"; "pz"; "ocz"] conf
+  | "prefix_no_templ" -> commd ~excl:["templ"] conf
+  | "prefix_no_pmod" -> commd ~excl:["p_mod"] conf
+  | "prefix_no_wide" -> commd ~excl:["wide"] conf
+  | "prefix_no_lang" -> commd ~excl:["lang"] conf
+  | "prefix_no_all" -> commd ~excl:["templ";"p_mod";"wide"] conf
+  | "referer" -> (Util.get_referer conf :> string)
   | "right" -> conf.right
   | "setup_link" -> if conf.setup_link then " - " ^ setup_link conf else ""
   | "sp" -> " "
   | "suffix" ->
-      (* On supprime de env toutes les paires qui sont dans (henv @ senv) *)
-      let l =
-        List.fold_left (fun accu (k, _) -> List.remove_assoc k accu) conf.env
-          (List.rev_append conf.henv conf.senv)
-      in
-      List.fold_left
-        (fun c (k, v) ->
-          if ( ( k = "oc" || k = "ocz" ) && v = "0" ) || k = "" then c
-          else c ^ k ^ "=" ^ v ^ "&") "" l
+    let aux = List.fold_left (fun acc (k, _) -> k :: acc) in
+    let excl = aux (aux [] conf.henv) conf.senv in
+    commd ~excl conf
   | "url" ->
-      let c = Util.commd conf in
-      (* On supprime de env toutes les paires qui sont dans (henv @ senv) *)
-      let l =
-        List.fold_left (fun accu (k, _) -> List.remove_assoc k accu) conf.env
-          (List.rev_append conf.henv conf.senv)
-      in
-      List.fold_left (fun c (k, v) -> c ^ k ^ "=" ^ v ^ "&") c l
+    let aux = List.fold_left (fun acc (k, _) -> k :: acc) in
+    let excl = aux (aux [] conf.henv) conf.senv in
+    commd ~excl ~trim:false conf
   | "version" -> Version.txt
   | "/" -> ""
   | _ -> raise Not_found
@@ -338,35 +279,35 @@ let apply_format conf nth s1 s2 =
       match Util.check_format "%s" s1 with
         Some s3 -> Printf.sprintf (transl_nth_format s3) s2
       | None ->
-           match Util.check_format "%d" s1 with
-             Some s3 -> Printf.sprintf (transl_nth_format s3) (int_of_string s2)
-           | None ->
-              let (s21, s22) =
-                let i = String.index s2 ':' in
-                String.sub s2 0 i,
-                String.sub s2 (i + 1) (String.length s2 - i - 1)
-              in
-               match Util.check_format "%s%s" s1 with
-                Some s3 -> Printf.sprintf (transl_nth_format s3) s21 s22
+        match Util.check_format "%d" s1 with
+          Some s3 -> Printf.sprintf (transl_nth_format s3) (int_of_string s2)
+        | None ->
+          let (s21, s22) =
+            let i = String.index s2 ':' in
+            String.sub s2 0 i,
+            String.sub s2 (i + 1) (String.length s2 - i - 1)
+          in
+          match Util.check_format "%s%s" s1 with
+            Some s3 -> Printf.sprintf (transl_nth_format s3) s21 s22
+          | None ->
+            match Util.check_format "%t%s" s1 with
+              Some s3 ->
+              Printf.sprintf (transl_nth_format s3) (fun _ -> s21) s22
+            | None ->
+              match Util.check_format "%s%t" s1 with
+                Some s3 ->
+                Printf.sprintf (transl_nth_format s3) s21 (fun _ -> s22)
               | None ->
-                match Util.check_format "%t%s" s1 with
+                match Util.check_format "%t%d" s1 with
                   Some s3 ->
-                    Printf.sprintf (transl_nth_format s3) (fun _ -> s21) s22
+                  Printf.sprintf (transl_nth_format s3) (fun _ -> s21)
+                    (int_of_string s22)
                 | None ->
-                  match Util.check_format "%s%t" s1 with
+                  match Util.check_format "%s%d" s1 with
                     Some s3 ->
-                      Printf.sprintf (transl_nth_format s3) s21 (fun _ -> s22)
-                  | None ->
-                    match Util.check_format "%t%d" s1 with
-                      Some s3 ->
-                        Printf.sprintf (transl_nth_format s3) (fun _ -> s21)
-                        (int_of_string s22)
-                    | None ->
-                      match Util.check_format "%s%d" s1 with
-                        Some s3 ->
-                          Printf.sprintf (transl_nth_format s3) s21
-                          (int_of_string s22)
-                      | None -> raise Not_found
+                    Printf.sprintf (transl_nth_format s3) s21
+                      (int_of_string s22)
+                  | None -> raise Not_found
 
 let rec eval_ast conf =
   function
@@ -487,13 +428,13 @@ let int_of e =
 let float_of e =
   function
     VVstring s ->
-      begin try Float.of_string s with
+    begin try Float.of_string s with
         Failure _ ->
-          raise_with_loc (loc_of_expr e)
-            (Failure ("float value expected\nFound = " ^ s))
-      end
+        raise_with_loc (loc_of_expr e)
+          (Failure ("float value expected\nFound = " ^ s))
+    end
   | VVbool _ | VVother _ ->
-      raise_with_loc (loc_of_expr e) (Failure "float value expected")
+    raise_with_loc (loc_of_expr e) (Failure "float value expected")
 
 let num_of e =
   function
@@ -508,7 +449,7 @@ let num_of e =
 
 let strip_dot str =
   let str = if str.[String.length str - 1] = '.' then
-    String.sub str 0 (String.length str - 1)
+      String.sub str 0 (String.length str - 1)
     else str
   in
   VVstring str
@@ -624,24 +565,31 @@ let print_body_prop conf =
     try " dir=\"" ^ Hashtbl.find conf.lexicon "!dir" ^ "\"" with
       Not_found -> ""
   in
-  Output.print_string conf (s ^ Util.body_prop conf)
+  Output.print_sstring conf (s ^ Util.body_prop conf)
 
 type 'a vother =
-    Vdef of string list * ast list
+  | Vdef of string list * ast list
   | Vval of 'a expr_val
-  | Vbind of string * string
+  | Vbind of string * Adef.encoded_string
 type 'a env = (string * 'a) list
 
 type ('a, 'b) interp_fun =
-  { eval_var : 'a env -> 'b -> loc -> string list -> 'b expr_val;
-    eval_transl : 'a env -> bool -> string -> string -> string;
-    eval_predefined_apply : 'a env -> string -> 'b expr_val list -> string;
-    get_vother : 'a -> 'b vother option;
-    set_vother : 'b vother -> 'a;
-    print_foreach :
-      ('a env -> 'b -> ast -> unit) -> ('a env -> 'b -> ast -> string) ->
-        'a env -> 'b -> loc -> string -> string list -> ast list list ->
-        ast list -> unit }
+  { eval_var : 'a env -> 'b -> loc -> string list -> 'b expr_val
+  ; eval_transl : 'a env -> bool -> string -> string -> string
+  ; eval_predefined_apply : 'a env -> string -> 'b expr_val list -> string
+  ; get_vother : 'a -> 'b vother option
+  ; set_vother : 'b vother -> 'a
+  ; print_foreach
+    : ('a env -> 'b -> ast -> unit)
+      -> ('a env -> 'b -> ast -> string)
+      -> 'a env
+      -> 'b
+      -> loc
+      -> string
+      -> string list
+      -> ast list list
+      -> ast list -> unit
+  }
 
 let get_def get_vother k env =
   let k = "#" ^ k in
@@ -768,7 +716,7 @@ let eval_var conf ifun env ep loc sl =
         end
     | ["env"; "val"] ->
         begin match ifun.get_vother (List.assoc "binding" env) with
-          Some (Vbind (_, v)) -> VVstring v
+          Some (Vbind (_, v)) -> VVstring (v :> string)
         | _ -> raise Not_found
         end
     | ["env"; "val"; "decoded"] ->
@@ -800,28 +748,20 @@ let print_wid_hei conf fname =
 let print_copyright conf =
   Util.include_template conf [] "copyr"
     (fun () ->
-      Output.print_string conf "<hr style=\"margin:0\">\n";
-      Output.print_string conf "<div style=\"font-size: 80%\">\n";
-      Output.print_string conf "<em>";
-      Output.print_string conf "Copyright (c) 1998-2007 INRIA - GeneWeb " ;
-      Output.print_string conf Version.txt;
-      Output.print_string conf "</em>";
-      Output.print_string conf "</div>\n";
-      Output.print_string conf "<br>\n")
-
-let print_copyright_with_logo conf =
-  let conf =
-    match List.assoc_opt "with_logo" conf.env with
-    | Some "yes" -> conf
-    | Some v -> { conf with env = Mutil.list_replace ("with_logo", v) ("with_logo", "yes") conf.env }
-    | None -> { conf with env = ("with_logo", "yes") :: conf.env }
-  in
-  print_copyright conf
+      Output.print_sstring conf "<hr style=\"margin:0\">\n";
+      Output.print_sstring conf "<div style=\"font-size: 80%\">\n";
+      Output.print_sstring conf "<em>";
+      Output.print_sstring conf "Copyright (c) 1998-2007 INRIA - GeneWeb " ;
+      Output.print_sstring conf Version.txt;
+      Output.print_sstring conf "</em>";
+      Output.print_sstring conf "</div>\n";
+      Output.print_sstring conf "<br>\n")
 
 let include_hed_trl conf name =
   Util.include_template conf [] name  (fun () -> ())
 
-let rec interp_ast conf ifun env =
+let rec interp_ast : config -> ('a, 'b) interp_fun -> 'a env -> 'b -> ast list -> unit
+  = fun conf ifun env ->
   let m_env = ref env in
   let rec eval_ast env ep a = string_of_expr_val (eval_ast_expr env ep a)
   and eval_ast_list env ep =
@@ -949,7 +889,7 @@ let rec interp_ast conf ifun env =
     | Aapply (loc, f, ell) -> print_apply env ep loc f ell
     | Alet (k, v, al) -> print_let env ep k v al
     | Afor (i, min, max, al) -> print_for env ep i min max al
-    | x -> Output.print_string conf (eval_ast env ep x)
+    | x -> Output.print_sstring conf (eval_ast env ep x)
   and print_ast_list env ep =
     function
       [] -> m_env := env
@@ -970,7 +910,7 @@ let rec interp_ast conf ifun env =
     match get_def ifun.get_vother f env with
       Some (xl, al) ->
         templ_print_apply loc f ifun.set_vother print_ast env ep xl al vl
-    | None -> Output.print_string conf (eval_apply env ep loc f vl)
+    | None -> Output.print_sstring conf (eval_apply env ep loc f vl)
   and print_let env ep k v al =
     let v = eval_ast_expr_list env ep v in
     let env = set_val ifun.set_vother k v env in print_ast_list env ep al
@@ -1005,9 +945,9 @@ and print_var print_ast_list conf ifun env ep loc sl =
   let rec print_var1 eval_var sl =
     try
       match eval_var sl with
-        VVstring s -> Output.print_string conf s
-      | VVbool true -> Output.print_string conf "1"
-      | VVbool false -> Output.print_string conf "0"
+        VVstring s -> Output.print_sstring conf s
+      | VVbool true -> Output.print_sstring conf "1"
+      | VVbool false -> Output.print_sstring conf "0"
       | VVother f -> print_var1 f []
     with Not_found ->
       match sl with
@@ -1032,13 +972,12 @@ and print_simple_variable conf =
     "base_header" -> include_hed_trl conf "hed"
   | "base_trailer" -> include_hed_trl conf "trl"
   | "body_prop" -> print_body_prop conf
-  | "copyright" -> print_copyright_with_logo conf
-  | "copyright_nologo" -> print_copyright conf
+  | "copyright" -> print_copyright conf
   | "hidden" -> Util.hidden_env conf
   | "message_to_wizard" -> Util.message_to_wizard conf
   | _ -> raise Not_found
 and print_variable conf sl =
-  try Output.print_string conf (eval_variable conf sl) with
+  try Output.print_sstring conf (eval_variable conf sl) with
     Not_found ->
       try
         match sl with
@@ -1046,18 +985,21 @@ and print_variable conf sl =
         | _ -> raise Not_found
       with Not_found -> Output.printf conf " %%%s?" (String.concat "." sl)
 
-let copy_from_templ conf env ic =
+let copy_from_templ : config -> Adef.encoded_string env -> in_channel -> unit
+  = fun conf env ic ->
   let astl = Templ_parser.parse_templ conf (Lexing.from_channel ic) in
   close_in ic;
   let ifun =
-    {eval_var =
-      (fun env _ _ -> function
-        | [s] -> VVstring (List.assoc s env)
-        | _ -> raise Not_found);
-     eval_transl = (fun _ -> eval_transl conf);
-     eval_predefined_apply = (fun _ -> raise Not_found);
-     get_vother = (fun _ -> None); set_vother = (fun _ -> "");
-     print_foreach = fun _ -> raise Not_found}
+    { eval_var =
+        (fun env _ _ -> function
+           | [s] -> VVstring (List.assoc s env : Adef.encoded_string :> string)
+           | _ -> raise Not_found)
+    ; eval_transl = (fun _ -> eval_transl conf)
+    ; eval_predefined_apply = (fun _ -> raise Not_found)
+    ; get_vother = (fun _ -> None)
+    ; set_vother = (fun _ -> Adef.encoded "")
+    ; print_foreach = fun _ -> raise Not_found
+    }
   in
   Templ_parser.wrap "" begin fun () ->
     interp_ast conf ifun env () astl

@@ -26,7 +26,7 @@ let home conf base : bool =
       if Request.only_special_env conf.env then false
       else w_person begin fun conf base p ->
           match Util.p_getenv conf.env "ptempl" with
-          | Some t when Util.p_getenv conf.base_env "ptempl" = Some "yes" -> false
+          | Some t when List.assoc_opt "ptempl" conf.base_env = Some "yes" -> false
           | _ -> person_selected conf base p
         end conf base
     end conf base

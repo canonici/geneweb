@@ -7,13 +7,11 @@ module Hutil = Geneweb.Hutil
 module Output = Geneweb.Output
 
 let error_cannot_access conf fname =
-  let title _ = Output.print_string conf "Error" in
+  let title _ = Output.print_sstring conf "Error" in
   Hutil.header conf title;
-  Output.print_string conf "<ul>\n";
-  Output.print_string conf "<li>\n";
-  Output.printf conf "Cannot access file \"%s.txt\".\n" fname;
-  Output.print_string conf "</li>\n";
-  Output.print_string conf "</ul>\n";
+  Output.print_sstring conf "<ul><li>Cannot access file \"" ;
+  Output.print_string conf (Util.escape_html fname) ;
+  Output.print_sstring conf ".txt\"</ul>" ;
   Hutil.trailer conf
 
 let gen_interp header conf fname ifun env ep =

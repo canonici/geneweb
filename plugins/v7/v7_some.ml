@@ -12,19 +12,99 @@ module Hutil = Geneweb.Hutil
 module Gutil = Gutil
 module Output = Geneweb.Output
 module Perso = V7_perso
-module StrSet = Mutil.StrSet
 module Templ = V7_templ
 module Util = Geneweb.Util
 
+module StrSet = Mutil.StrSet
+
+type 'a env =
+    Vlist_data of (string * (string * int) list) list
+  | Vlist_ini of string list
+  | Vlist_value of (string * (string * int) list) list
+  | Venv_keys of (string * int) list
+  | Vint of int
+  | Vstring of string
+  | Vbool of bool
+  | Vother of 'a
+  | Vnone
+
+let get_vother =
+  function
+    Vother x -> Some x
+  | _ -> None
+let set_vother x = Vother x
+
+(* TODO find a way tu use get_vother, set_vother from templ.camlp5 *)
+let buttons_fnames conf =
+  V7_interp.gen_interp false conf "buttons_fnames"
+    {Templ.eval_var = (fun _ -> raise Not_found);
+     Templ.eval_transl = (fun _ -> Templ.eval_transl conf);
+     Templ.eval_predefined_apply = (fun _ -> raise Not_found);
+     Templ.get_vother = get_vother; Templ.set_vother = set_vother;
+     Templ.print_foreach = (fun _ -> raise Not_found) }
+    [] ()
+
+let print_other_list conf _base list =
+  let s_title = Utf8.capitalize (transl conf "see also") in
+  let s_colon = transl conf ":" in
+  Output.printf conf "<span>%s%s</span>\n" s_title s_colon;
+  Mutil.list_iter_first begin fun first (fn, c) ->
+    if first then Output.print_sstring conf ", " ;
+    Output.print_sstring conf {|<a href="|} ;
+    Output.print_string conf (commd conf) ;
+    Output.print_sstring conf "m=P&v=" ;
+    Output.print_string conf (Mutil.encode fn) ;
+    Output.print_sstring conf {|&other=on">|} ;
+    Output.print_string conf (Util.escape_html fn) ;
+    Output.print_sstring conf "</a> (" ;
+    Output.print_sstring conf (string_of_int c) ;
+    Output.print_sstring conf ")"
+  end list
+
+let match_fnames word str x =
+  if word then
+    let rexp = Str.regexp (".*\\b" ^ x ^ "\\b.*") in
+    Str.string_match rexp str 0
+  else Mutil.contains str x
+
+let other_fnames conf base x =
+  match Alln.select_names conf base false "" max_int with
+  | (Alln.Result list, _len) ->
+    let exact = p_getenv conf.env "t" = Some "A" in
+    let word = p_getenv conf.env "word" = Some "on" in
+    let x = if exact then x else Name.lower x in
+    List.fold_left
+      (fun l (_k, str, c) ->
+         let strl = if exact then str else Name.lower str in
+         if (match_fnames word strl x && strl <> x)
+         then (str, c) :: l else l)
+      [] list
+  | (Alln.Specify _l, _len) -> [] (* TODO is [] ok? *)
+
 let not_found conf txt x =
-  let title _ = Output.printf conf "%s: \"%s\"" (Utf8.capitalize_fst txt) (Util.escape_html x) in
-  Hutil.rheader conf title; Hutil.print_link_to_welcome conf false; Hutil.trailer conf
+  let title _ =
+    Output.print_sstring conf (Utf8.capitalize_fst txt) ;
+    Output.print_sstring conf (transl conf ":") ;
+    Output.print_sstring conf {| "|} ;
+    Output.print_string conf (Util.escape_html x) ;
+    Output.print_sstring conf {|"|} ;
+    Output.print_sstring conf (Utf8.capitalize_fst txt) ;
+  in
+  Hutil.rheader conf title;
+  Hutil.print_link_to_welcome conf false;
+  Hutil.trailer conf
 
 let first_name_not_found conf =
   not_found conf (transl conf "first name not found")
 
 let surname_not_found conf = not_found conf (transl conf "surname not found")
 
+let print_img conf img =
+  Output.print_sstring conf {|<img src="|};
+  Output.print_string conf (Util.image_prefix conf) ;
+  Output.print_sstring conf {|/|} ;
+  Output.print_string conf img ;
+  Output.print_sstring conf {|" alt="" title="">|}
 
 (* **********************************************************************)
 (*  [Fonc] print_branch_to_alphabetic : conf -> string -> int -> unit   *)
@@ -40,52 +120,39 @@ let surname_not_found conf = not_found conf (transl conf "surname not found")
     [Rem] : Non exporté en clair hors de ce module.                     *)
 (* ******************************************************************** *)
 let print_branch_to_alphabetic conf x nb_branch =
-  Output.print_string conf "<table class=\"display_search\">\n";
-  Output.print_string conf "<tr>";
-  Output.print_string conf "<td>";
-  Output.print_string conf "<b>";
-  Output.print_string conf
+  Output.print_sstring conf {|<table class="display_search"><tr><td><b>|};
+  Output.print_sstring conf
     (Utf8.capitalize_fst (transl_nth conf "display by/branch/alphabetic order" 0));
-  Output.print_string conf "</b>";
-  Output.print_string conf "</td>";
-  Output.print_string conf "<td>";
-  Output.printf conf
-    "<img src=\"%s/%s\" alt=\"\" title=\"\">\n"
-    (Util.image_prefix conf) "picto_branch.png";
-  Output.print_string conf "</td>";
-  Output.print_string conf "<td>";
-  Output.printf conf "%s (%d)"
-    (transl_nth conf "display by/branch/alphabetic order" 1) nb_branch;
-  Output.print_string conf "</td>";
-  Output.print_string conf "<td>";
-  Output.printf conf
-    "<img src=\"%s/%s\" alt=\"\" title=\"\">\n"
-    (Util.image_prefix conf) "picto_alphabetic_order.png";
-  Output.print_string conf "</td>";
+  Output.print_sstring conf {|</b></td><td>|};
+  print_img conf (Adef.encoded "picto_branch.png") ;
+  Output.print_sstring conf {|</td><td>|};
+  Output.print_sstring conf (transl_nth conf "display by/branch/alphabetic order" 1);
+  Output.print_sstring conf " (" ;
+  Output.print_sstring conf (string_of_int nb_branch);
+  Output.print_sstring conf {|)</td><td>|} ;
+  print_img conf (Adef.encoded "picto_alphabetic_order.png") ;
+  Output.print_sstring conf {|</td><td>|};
   (* Ne pas oublier l'attribut nofollow pour les robots *)
-  Output.print_string conf "<td>";
-  if p_getenv conf.env "t" = Some "A" then
-    begin
-      Output.printf conf "<a href=\"%sm=N&o=i&v=%s\" rel=\"nofollow\">"
-        (commd conf) (Mutil.encode x ^ "&t=A");
-      Output.print_string conf
-        (transl_nth conf "display by/branch/alphabetic order" 2);
-      Output.print_string conf "</a>"
-    end
-  else
-    begin
-      Output.printf conf "<a href=\"%sm=N&o=i&v=%s\" rel=\"nofollow\">"
-        (commd conf) (Mutil.encode x ^ "&t=N");
-      Output.print_string conf
-        (transl_nth conf "display by/branch/alphabetic order" 2);
-      Output.print_string conf "</a>"
-    end;
+  if p_getenv conf.env "t" = Some "A" then begin
+    Output.print_sstring conf {|<a href="|} ;
+    Output.print_string conf (commd conf);
+    Output.print_sstring conf "m=N&o=i&t=A&v=";
+    Output.print_string conf (Mutil.encode x);
+    Output.print_sstring conf {|" rel="nofollow">|} ;
+    Output.print_sstring conf (transl_nth conf "display by/branch/alphabetic order" 2);
+    Output.print_sstring conf "</a>"
+  end else begin
+    Output.print_sstring conf {|<a href="|} ;
+    Output.print_string conf (commd conf) ;
+    Output.print_sstring conf {|m=N&o=i&t=N&v=|};
+    Output.print_string conf (Mutil.encode x);
+    Output.print_sstring conf {|" rel="nofollow">|} ;
+    Output.print_sstring conf
+      (transl_nth conf "display by/branch/alphabetic order" 2);
+    Output.print_sstring conf "</a>"
+  end;
   (* Ne pas oublier l'attribut nofollow pour les robots *)
-  Output.print_string conf "</td>";
-  Output.print_string conf "</tr>";
-  Output.print_string conf "</table>\n";
-  Output.print_string conf "<br>\n"
-
+  Output.print_sstring conf "</td></tr></table><br>"
 
 (* **********************************************************************)
 (*  [Fonc] print_alphabetic_to_branch : conf -> string -> int -> unit   *)
@@ -99,57 +166,37 @@ let print_branch_to_alphabetic conf x nb_branch =
     [Rem] : Non exporté en clair hors de ce module.                     *)
 (* ******************************************************************** *)
 let print_alphabetic_to_branch conf x =
-  Output.print_string conf "<table class=\"display_search\">";
-  Output.print_string conf "<tr>";
-  Output.print_string conf "<td>";
-  Output.print_string conf "<b>";
-  Output.print_string conf
+  Output.print_sstring conf {|<table class="display_search"><tr><td><b>|};
+  Output.print_sstring conf
     (Utf8.capitalize_fst (transl_nth conf "display by/branch/alphabetic order" 0));
-  Output.print_string conf "</b>";
-  Output.print_string conf "</td>";
-  Output.print_string conf "<td>";
-  Output.printf conf
-    "<img src=\"%s/%s\" alt=\"\" title=\"\">\n"
-    (Util.image_prefix conf) "picto_branch.png";
-  Output.print_string conf "</td>";
-  (* Ne pas oublier l'attribut nofollow pour les robots *)
-  Output.print_string conf "<td>";
-  if p_getenv conf.env "t" = Some "A" then
-    begin
-      Output.printf conf "<a href=\"%sm=N&v=%s\" rel=\"nofollow\">" (commd conf)
-        (Mutil.encode x ^ "&t=A");
-      Output.print_string conf
-        (transl_nth conf "display by/branch/alphabetic order" 1);
-      Output.print_string conf "</a>"
-    end
-  else
-    begin
-      Output.printf conf "<a href=\"%sm=NG&sn=%s\" rel=\"nofollow\">" (commd conf)
-        (Mutil.encode x);
-      Output.print_string conf
-        (transl_nth conf "display by/branch/alphabetic order" 1);
-      Output.print_string conf "</a>"
-    end;
-  (* Ne pas oublier l'attribut nofollow pour les robots *)
-  Output.print_string conf "</td>";
-  Output.print_string conf "<td>";
-  Output.printf conf
-    "<img src=\"%s/%s\" alt=\"\" title=\"\">\n"
-    (Util.image_prefix conf) "picto_alphabetic_order.png";
-  Output.print_string conf "</td>";
-  Output.print_string conf "<td>";
-  Output.print_string conf
+  Output.print_sstring conf "</b></td><td>";
+  print_img conf (Adef.encoded "picto_branch.png") ;
+  Output.print_sstring conf "</td><td>";
+  if p_getenv conf.env "t" = Some "A" then begin
+    Output.print_sstring conf {|<a href="|} ;
+    Output.print_string conf (commd conf) ;
+    Output.print_sstring conf "m=N&t=A&v=" ;
+    Output.print_string conf (Mutil.encode x);
+    Output.print_sstring conf {|" rel="nofollow">|};
+    Output.print_sstring conf
+      (transl_nth conf "display by/branch/alphabetic order" 1);
+    Output.print_sstring conf "</a>"
+  end else begin
+    Output.print_sstring conf {|<a href="|} ;
+    Output.print_string conf (commd conf) ;
+    Output.print_sstring conf "m=NG&sn=" ;
+    Output.print_string conf (Mutil.encode x);
+    Output.print_sstring conf {|" rel="nofollow">|};
+    Output.print_sstring conf
+      (transl_nth conf "display by/branch/alphabetic order" 1);
+    Output.print_sstring conf "</a>"
+  end;
+  Output.print_sstring conf "</td><td>";
+  print_img conf (Adef.encoded "picto_alphabetic_order.png") ;
+  Output.print_sstring conf "</td><td>";
+  Output.print_sstring conf
     (transl_nth conf "display by/branch/alphabetic order" 2);
-  Output.print_string conf "</td>";
-  Output.print_string conf "</tr>";
-  Output.print_string conf "</table>";
-  Output.print_string conf "<br>\n"
-
-let match_fnames word str x =
-  if word then
-    let rexp = Str.regexp (".*\\b" ^ x ^ "\\b.*") in
-    Str.string_match rexp str 0
-  else Mutil.contains str x
+  Output.print_sstring conf "</td></tr></table><br>"
 
 let persons_of_fsname conf base base_strings_of_fsname find proj x =
   (* list of strings index corresponding to the crushed lower first name
@@ -203,22 +250,26 @@ let persons_of_fsname conf base base_strings_of_fsname find proj x =
   l, name_inj
 
 let print_elem conf base is_surname (p, xl) =
-  Mutil.list_iter_first
-    (fun first x ->
-       let iper = get_iper x in
-       if not first then Output.print_string conf "</li>\n<li>\n  ";
-       V7_sosa.print_sosa conf base x true;
-       Output.printf conf "<a href=\"%s%s\" id=\"i%s\">" (commd conf)
-         (acces conf base x) (string_of_iper iper);
-       if is_surname then
-         Output.printf conf "%s%s" (surname_without_particle base p) (surname_particle base p)
-       else Output.print_string conf (if p = "" then "?" else p);
-       Output.print_string conf "</a>";
-       Output.print_string conf (DateDisplay.short_dates_text conf base x);
-       Output.print_string conf "<em>";
-       specify_homonymous conf base x true;
-       Output.print_string conf "</em>")
-    xl
+  Mutil.list_iter_first begin fun first x ->
+    let iper = get_iper x in
+    if not first then Output.print_sstring conf "</li><li> ";
+    V7_sosa.print_sosa conf base x true;
+    Output.print_sstring conf {|<a href="|} ;
+    Output.print_string conf (commd conf) ;
+    Output.print_string conf (acces conf base x) ;
+    Output.print_sstring conf {|" id="i|} ;
+    Output.print_sstring conf (string_of_iper iper) ;
+    Output.print_sstring conf {|">|} ;
+    if is_surname then begin
+      Output.print_string conf (escape_html @@ surname_without_particle base p) ;
+      Output.print_string conf (escape_html @@ surname_particle base p) ;
+    end else Output.print_string conf (if p = "" then Adef.escaped "?" else escape_html p);
+    Output.print_sstring conf "</a>";
+    Output.print_string conf (DateDisplay.short_dates_text conf base x);
+    Output.print_sstring conf "<em>";
+    specify_homonymous conf base x true;
+    Output.print_sstring conf "</em>"
+  end xl
 
 let first_char s =
   (* Si la personne n'a pas de prénom/nom, on renvoie '?' *)
@@ -234,56 +285,6 @@ let name_unaccent s =
       let (t, j) = Name.unaccent_utf_8 false s i in copy j (Buff.mstore len t)
   in
   copy 0 0
-
-type 'a env =
-    Vlist_data of (string * (string * int) list) list
-  | Vlist_ini of string list
-  | Vlist_value of (string * (string * int) list) list
-  | Venv_keys of (string * int) list
-  | Vint of int
-  | Vstring of string
-  | Vbool of bool
-  | Vother of 'a
-  | Vnone
-
-let get_vother =
-  function
-    Vother x -> Some x
-  | _ -> None
-let set_vother x = Vother x
-
-(* TODO find a way tu use get_vother, set_vother from templ.camlp5 *)
-let buttons_fnames conf =
-  V7_interp.gen_interp false conf "buttons_fnames"
-    {Templ.eval_var = (fun _ -> raise Not_found);
-     Templ.eval_transl = (fun _ -> Templ.eval_transl conf);
-     Templ.eval_predefined_apply = (fun _ -> raise Not_found);
-     Templ.get_vother = get_vother; Templ.set_vother = set_vother;
-     Templ.print_foreach = (fun _ -> raise Not_found) }
-    [] ()
-
-let print_other_list conf _base list =
-  let s_title = Printf.sprintf "%s" (Utf8.capitalize (transl conf "see also")) in
-  let s_colon = Printf.sprintf "%s" (transl conf ":") in
-  Output.printf conf "<span>%s%s</span>\n" s_title s_colon;
-  Mutil.list_iter_first (fun first (fn, c) ->
-      Output.printf conf "%s<a href=\"%sm=P&v=%s&other=on\">%s</a> (%d)"
-        (if first then "" else ", ") (commd conf) (Mutil.encode fn) fn c)
-    list
-
-let other_fnames conf base x =
-  match Alln.select_names conf base false "" max_int with
-  | (Alln.Result list, _len) ->
-    let exact = p_getenv conf.env "t" = Some "A" in
-    let word = p_getenv conf.env "word" = Some "on" in
-    let x = if exact then x else Name.lower x in
-    List.fold_left
-      (fun l (_k, str, c) ->
-         let strl = if exact then str else Name.lower str in
-         if (match_fnames word strl x && strl <> x)
-         then (str, c) :: l else l)
-      [] list
-  | (Alln.Specify _l, _len) -> [] (* TODO is [] ok? *)
 
 let first_name_print_list conf base x1 xl liste =
   let liste =
@@ -312,13 +313,19 @@ let first_name_print_list conf base x1 xl liste =
       [] l
   in
   let title h =
-    if h || p_getenv conf.env "t" = Some "A" then Output.print_string conf x1
+    if h || p_getenv conf.env "t" = Some "A"
+    then Output.print_string conf (escape_html x1)
     else
-      Mutil.list_iter_first
-        (fun first x ->
-           Output.printf conf "%s<a href=\"%sm=P&v=%s&t=A\">%s</a>"
-             (if first then "" else ", ") (commd conf) (Mutil.encode x) x)
-        (StrSet.elements xl)
+      Mutil.list_iter_first begin fun first x ->
+        if not first then Output.print_sstring conf ", " ;
+        Output.print_sstring conf {|<a href="|} ;
+        Output.print_string conf (commd conf) ;
+        Output.print_sstring conf {|m=P&t=A&v=|} ;
+        Output.print_string conf (Mutil.encode x) ;
+        Output.print_sstring conf {|">|} ;
+        Output.print_string conf (escape_html x) ;
+        Output.print_sstring conf {|</a>|} ;
+      end (StrSet.elements xl)
   in
   Hutil.header conf title;
   Hutil.print_link_to_welcome conf true;
@@ -327,14 +334,13 @@ let first_name_print_list conf base x1 xl liste =
   (* l'aide sur la sélection d'un individu.          *)
   Util.print_tips_relationship conf;
   let other = p_getenv conf.env "other" = Some "on" in
-  if other then
-    let listo =
-        List.fold_left (fun l x ->
-            (other_fnames conf base x) :: l) [] (StrSet.elements xl)
-    in
-    let listo = List.flatten listo |> List.sort_uniq compare in
-    if listo <> [] then print_other_list conf base listo else ()
-  else ();
+  if other then begin
+    StrSet.elements xl
+    |> List.fold_left (fun l x -> (other_fnames conf base x) :: l) []
+    |> List.flatten
+    |> List.sort_uniq compare
+    |> function [] -> () | list -> print_other_list conf base list
+  end ;
   let list =
     List.map
       (fun (sn, ipl) ->
@@ -347,28 +353,35 @@ let first_name_print_list conf base x1 xl liste =
     (fun (_, txt, ipl) -> print_elem conf base true (txt, ipl)) list;
   Hutil.trailer conf
 
+let mk_specify_title conf kw n _ =
+  Output.print_sstring conf (Utf8.capitalize_fst kw) ;
+  Output.print_sstring conf {| "|} ;
+  Output.print_string conf (escape_html n) ;
+  Output.print_sstring conf {|"|} ;
+  Output.print_sstring conf (transl conf ":") ;
+  Output.print_sstring conf {| |} ;
+  Output.print_sstring conf (transl conf "specify")
+
 let select_first_name conf n list =
-  let title _ =
-    Output.printf conf "%s \"%s\" : %s"
-      (Utf8.capitalize_fst (transl_nth conf "first name/first names" 0)) n
-      (transl conf "specify")
-  in
-  Hutil.header conf title;
+  Hutil.header conf @@
+  mk_specify_title conf (transl_nth conf "first name/first names" 0) n;
   buttons_fnames conf;
-  Output.print_string conf "<ul>";
-  List.iter
-    (fun (sstr, (strl, _)) ->
-       Output.print_string conf "\n";
-       Output.print_string conf "<li>" ;
-       Output.printf conf "<a href=\"%sm=P&v=%s\">" (commd conf)
-         (Mutil.encode sstr);
-       Mutil.list_iter_first
-         (fun first str ->
-            Output.printf conf "%s%s" (if first then "" else ", ") str)
-         (StrSet.elements strl);
-       Output.print_string conf "</a>\n")
+  Output.print_sstring conf "<ul>";
+  List.iter begin fun (sstr, (strl, _)) ->
+    Output.print_sstring conf {|<li><a href="|} ;
+    Output.print_string conf (commd conf) ;
+    Output.print_sstring conf {|m=P&v=|} ;
+    Output.print_string conf (Mutil.encode sstr);
+    Output.print_sstring conf {|">|} ;
+    Mutil.list_iter_first begin fun first str ->
+      if not first then Output.print_sstring conf ", ";
+      Output.print_string conf (escape_html str)
+    end
+      (StrSet.elements strl);
+    Output.print_sstring conf "</a>\n"
+  end
     list;
-  Output.print_string conf "</ul>\n";
+  Output.print_sstring conf "</ul>\n";
   Hutil.trailer conf
 
 let rec merge_insert (sstr, (strl, iperl) as x) =
@@ -404,23 +417,19 @@ let persons_of_absolute_first_name =
 let persons_of_absolute_surname =
   persons_of_absolute base_strings_of_surname persons_of_surname get_surname
 
-
 let first_name_print conf base x =
   let (list, _) =
-    if p_getenv conf.env "t" = Some "A" then
-      persons_of_absolute_first_name conf base x,
-      (fun _ -> raise (Match_failure ("src/some.ml", 347, 51)))
-    else if x = "" then
-      [], (fun _ -> raise (Match_failure ("src/some.ml", 348, 29)))
+    if p_getenv conf.env "t" = Some "A"
+    then persons_of_absolute_first_name conf base x, (fun _ -> assert false)
+    else if x = "" then [], (fun _ -> assert false)
     else
       persons_of_fsname conf base base_strings_of_first_name
         (spi_find (persons_of_first_name base)) get_first_name x
   in
   let list =
-    List.map
-      (fun (str, _, iperl) ->
-         Name.lower str, (StrSet.add str StrSet.empty, iperl))
-      list
+    List.map begin fun (str, _, iperl) ->
+      Name.lower str, (StrSet.add str StrSet.empty, iperl)
+    end list
   in
   let list = List.fold_right merge_insert list [] in
   (* Construction de la table des sosa de la base *)
@@ -452,33 +461,36 @@ let has_children_with_that_name conf base des name =
 
 (* List selection bullets *)
 
-let bullet_sel_txt = "o"
-let bullet_unsel_txt = "+"
-let bullet_nosel_txt = "o"
-let print_selection_bullet conf =
-  function
-    Some (txt, sel) ->
-      let req =
-        List.fold_left
-          (fun req (k, v) ->
-             if not sel && k = "u" && v = txt then req
-             else
-               let s = k ^ "=" ^ v in if req = "" then s else req ^ "&" ^ s)
-          "" conf.env
-      in
-      Output.printf conf "<a id=\"if%s\" href=\"%s%s%s%s\" rel=\"nofollow\">" txt
-        (prefix_base conf) req (if sel then "&u=" ^ txt else "")
-        (if sel || List.mem_assoc "u" conf.env then "#if" ^ txt else "");
-      Output.print_string conf (if sel then bullet_sel_txt else bullet_unsel_txt);
-      Output.print_string conf "</a>";
-      Output.print_string conf "\n"
-  | None -> Output.printf conf "%s\n" bullet_nosel_txt
+let bullet_sel_txt = Adef.safe "o"
+let bullet_unsel_txt = Adef.safe "+"
+let bullet_nosel_txt = Adef.safe "o"
+let print_selection_bullet conf = function
+  | Some (txt, sel) ->
+    let req : Adef.encoded_string =
+      List.fold_left begin fun (req : Adef.encoded_string) (k, (v : Adef.encoded_string)) ->
+        if not sel && k = "u" && v = txt then req
+        else
+          let s : Adef.encoded_string = (Adef.encoded k) ^^^ "=" ^<^ v in
+          if (req :> string) = "" then s else req ^^^ "&" ^<^ s
+      end (Adef.encoded "") conf.env
+    in
+    Output.print_sstring conf {|<a id="if|};
+    Output.print_string conf txt;
+    Output.print_sstring conf {|" href="|} ;
+    Output.print_string conf (prefix_base conf);
+    Output.print_string conf req;
+    if sel then Output.print_string conf ("&u=" ^<^ txt) ;
+    if sel || List.mem_assoc "u" conf.env
+    then Output.print_string conf ("#if" ^<^ txt);
+    Output.print_sstring conf {|" rel="nofollow">|} ;
+    Output.print_string conf (if sel then bullet_sel_txt else bullet_unsel_txt);
+    Output.print_sstring conf "</a>";
+  | None -> Output.print_string conf bullet_nosel_txt
 
 let unselected_bullets conf =
-  List.fold_left
-    (fun sl (k, v) ->
-       try if k = "u" then ifam_of_string v :: sl else sl with Failure _ -> sl)
-    [] conf.env
+  List.fold_left begin fun sl (k, v) ->
+    try if k = "u" then ifam_of_string (Mutil.decode v) :: sl else sl with Failure _ -> sl
+  end [] conf.env
 
 let alphabetic1 n1 n2 = Gutil.alphabetic_utf_8 n1 n2
 
@@ -489,110 +501,99 @@ let print_branch conf base psn name =
   let rec loop p =
     let u = pget conf base (get_iper p) in
     let family_list =
-      List.map
-        (fun ifam ->
-           let fam = foi base ifam in
-           let c = Gutil.spouse (get_iper p) fam in
-           let c = pget conf base c in
-           let down = has_children_with_that_name conf base fam name in
-           let down =
-             if get_sex p = Female && p_surname base c = name then false
-             else down
-           in
-           let i = ifam in
-           let sel = not (List.mem i unsel_list) in
-           fam, c, (if down then Some (string_of_ifam i, sel) else None))
-        (Array.to_list (get_family u))
+      Array.map begin fun ifam ->
+        let fam = foi base ifam in
+        let c = Gutil.spouse (get_iper p) fam in
+        let c = pget conf base c in
+        let down = has_children_with_that_name conf base fam name in
+        let down =
+          if get_sex p = Female && p_surname base c = name then false
+          else down
+        in
+        let i = ifam in
+        let sel = not (List.mem i unsel_list) in
+        fam, c, (if down then Some (Mutil.encode @@ string_of_ifam i, sel) else None)
+      end (get_family u)
     in
     let first_select =
-      match family_list with
-        (_, _, select) :: _ -> select
-      | _ -> None
+      if family_list = [||]
+      then None
+      else (fun (_, _, s) -> s) (Array.unsafe_get family_list 0)
     in
     let print_elem p with_link with_id with_sn =
-      let hl =
-        if with_link then "strong" else "em"
-      in
       let render p =
         if with_link then
           if with_id then Util.reference conf base p
-          else Util.reference_noid conf base p 
+          else Util.reference_noid conf base p
         else (fun s -> s)
       in
       V7_sosa.print_sosa conf base p with_link;
-      Output.printf conf "<%s>%s</%s>%s\n"
-        hl
+      Output.print_sstring conf @@ if with_link then "<strong>" else "<em>" ;
+      Output.print_string conf
         (render p
-           (if is_hide_names conf p && not (authorized_age conf base p) then "x"
-            else if not psn && not with_sn && p_surname base p = name then
-              person_text_without_surname conf base p
-            else person_text conf base p))
-        hl
-        (DateDisplay.short_dates_text conf base p)
+           (if is_hide_names conf p && not (authorized_age conf base p)
+            then Adef.safe "x"
+            else if not psn && not with_sn && p_surname base p = name
+            then gen_person_text ~sn:false conf base p
+            else gen_person_text conf base p)) ;
+      Output.print_sstring conf @@ if with_link then "</strong>" else "</em>" ;
+      Output.print_string conf (DateDisplay.short_dates_text conf base p)
     in
-    Output.print_string conf "<li>";
+    Output.print_sstring conf "<li>";
     print_selection_bullet conf first_select;
     print_elem p true true false;
-    if Array.length (get_family u) = 0 then ()
-    else
-      let _ =
-        List.fold_left
-          (fun first (fam, sp, select) ->
-             if not first then begin
-               Output.print_string conf "<li>";
-               print_selection_bullet conf select;
-               print_elem p false true false
-             end;
-             Output.print_string conf " &amp;";
-             Output.printf conf "%s\n"
-               (DateDisplay.short_marriage_date_text conf base fam p sp);
-             print_elem sp true false true;
-             let children = get_children fam in
-             begin match select with
-               Some (_, true) ->
-                 Output.print_string conf "<ul>\n";
-                 List.iter
-                   (fun e ->
-                      loop (pget conf base e);
-                      Output.print_string conf "</li>\n")
-                   (Array.to_list children);
-                 Output.print_string conf "</ul>\n"
-             | Some (_, false) -> ()
-             | None ->
-                 if Array.length children <> 0 then
-                   Output.print_string conf "<ul class=\"posterity\">\
-                                   <li>...</li>\
-                                   </ul>\n";
-             end;
-             Output.print_string conf "</li>";
-             false)
-          true family_list
-      in
-      ();
-    Output.print_string conf "</li>"
+    if Array.length (get_family u) <> 0 then
+      ignore @@ Array.fold_left begin fun first (fam, sp, select) ->
+        if not first then begin
+          Output.print_sstring conf "<li>";
+          print_selection_bullet conf select;
+          print_elem p false true false
+        end;
+        Output.print_sstring conf " &amp;";
+        Output.print_string conf
+          (DateDisplay.short_marriage_date_text conf base fam p sp);
+        Output.print_sstring conf " ";
+        print_elem sp true false true;
+        let children = get_children fam in
+        begin match select with
+          | Some (_, true) ->
+            Output.print_sstring conf "<ul>";
+            Array.iter begin fun e ->
+              loop (pget conf base e);
+              Output.print_sstring conf "</li>"
+            end children ;
+            Output.print_sstring conf "</ul>"
+          | Some (_, false) -> ()
+          | None ->
+            if Array.length children <> 0
+            then Output.print_sstring conf {|<ul class="posterity"><li>...</li></ul>|};
+        end;
+        Output.print_sstring conf "</li>";
+        false
+      end true family_list ;
+    Output.print_sstring conf "</li>"
   in
   loop
 
 let print_one_branch conf base bh psn =
-  Output.print_string conf "<ul>\n";
+  Output.print_sstring conf "<ul>";
   let p = bh.bh_ancestor in
   if bh.bh_well_named_ancestors = []
   then
     let x = sou base (get_surname p) in
     print_branch conf base psn x p
   else begin
-    Output.print_string conf "<li>\n";
-    if is_hidden p then Output.print_string conf "&lt;&lt;"
-    else wprint_geneweb_link conf (Util.acces conf base p) "&lt;&lt;" ;
-    Output.print_string conf "\n<ul>\n";
-    List.iter
-      (fun p ->
-         let x = sou base (get_surname p) in
-         print_branch conf base psn x p)
-      bh.bh_well_named_ancestors;
-    Output.print_string conf "</ul></li>\n"
+    Output.print_sstring conf "<li>";
+    if is_hidden p then Output.print_sstring conf "&lt;&lt;"
+    else wprint_geneweb_link conf (Util.acces conf base p) (Adef.safe "&lt;&lt;") ;
+    Output.print_sstring conf "<ul>";
+    List.iter begin fun p ->
+      let x = sou base (get_surname p) in
+      print_branch conf base psn x p
+    end bh.bh_well_named_ancestors;
+    Output.print_sstring conf "</ul></li>"
   end;
-  Output.print_string conf "</ul>\n"
+  Output.print_sstring conf "</ul>"
 
 let print_one_surname_by_branch conf base x xl (bhl, str) =
   let ancestors =
@@ -623,13 +624,19 @@ let print_one_surname_by_branch conf base x xl (bhl, str) =
           Not_found -> false
   in
   let title h =
-    if h || p_getenv conf.env "t" = Some "A" then Output.print_string conf x
+    if h || p_getenv conf.env "t" = Some "A"
+    then Output.print_string conf (escape_html x)
     else
-      Mutil.list_iter_first
-        (fun first x ->
-           Output.printf conf "%s<a href=\"%sm=N&v=%s&t=A\">%s</a>"
-             (if first then "" else ", ") (commd conf) (Mutil.encode x) x)
-        (StrSet.elements xl)
+      Mutil.list_iter_first begin fun first x ->
+        if not first then Output.print_sstring conf ", " ;
+        Output.print_sstring conf {|<a href="|} ;
+        Output.print_string conf (commd conf) ;
+        Output.print_sstring conf {|m=N&t=A&v=|} ;
+        Output.print_string conf (Mutil.encode x) ;
+        Output.print_sstring conf {|">|} ;
+        Output.print_string conf (escape_html x) ;
+        Output.print_sstring conf {|</a>|}
+      end (StrSet.elements xl)
   in
   let br = p_getint conf.env "br" in
   Hutil.header conf title;
@@ -639,82 +646,65 @@ let print_one_surname_by_branch conf base x xl (bhl, str) =
   Util.print_tips_relationship conf;
   (* Menu afficher par branche/ordre alphabetique *)
   if br = None then print_branch_to_alphabetic conf x len;
-  Output.print_string conf "<div id=\"surname_by_branch\">\n";
-  if len > 1 && br = None then
-    begin
-      Output.print_string conf "<dl>\n";
-      begin let _ =
-        List.fold_left
-          (fun n bh ->
-             Output.print_string conf "<dt>";
-             Output.printf conf
-               "<a href=\"%sm=N&v=%s&br=%d\" rel=\"nofollow\">"
-               (commd conf) (Mutil.encode str) n;
-             Output.printf conf "%d." n;
-             Output.print_string conf "</a>";
-             Output.print_string conf "</dt>\n";
-             Output.print_string conf "<dd>\n";
-             print_one_branch conf base bh psn;
-             Output.print_string conf "</dd>";
-             n + 1)
-          1 ancestors
-      in
-        ()
-      end;
-      Output.print_string conf "</dl>\n"
-    end
-  else
-    begin let _ =
-      List.fold_left
-        (fun n bh ->
-           if br = None || br = Some n then
-             print_one_branch conf base bh psn;
-           n + 1)
-        1 ancestors
-    in
-      ()
-    end;
-  Output.print_string conf "</div>\n";
+  Output.print_sstring conf {|<div id="surname_by_branch">|};
+  if len > 1 && br = None then begin
+    Output.print_sstring conf "<dl>";
+    ignore @@ List.fold_left begin fun n bh ->
+      Output.print_sstring conf {|<dt><a href="|} ;
+      Output.print_string conf (commd conf) ;
+      Output.print_sstring conf {|m=N&v=|} ;
+      Output.print_string conf (Mutil.encode str) ;
+      Output.print_sstring conf {|&br=|} ;
+      Output.print_sstring conf (string_of_int n) ;
+      Output.print_sstring conf {|" rel="nofollow">|} ;
+      Output.print_sstring conf (string_of_int n) ;
+      Output.print_sstring conf ".</a></dt><dd>";
+      print_one_branch conf base bh psn;
+      Output.print_sstring conf "</dd>";
+      n + 1
+    end 1 ancestors ;
+    Output.print_sstring conf "</dl>"
+  end else
+    ignore @@ List.fold_left begin fun n bh ->
+      if br = None || br = Some n
+      then print_one_branch conf base bh psn ;
+      n + 1 end 1 ancestors ;
+  Output.print_sstring conf "</div>";
   Hutil.trailer conf
 
 let print_several_possible_surnames x conf base (_, homonymes) =
   let fx = x in
-  let x =
-    match homonymes with
-      x :: _ -> x
-    | _ -> x
-  in
-  let title _ =
-    Output.printf conf "%s \"%s\" : %s"
-      (Utf8.capitalize_fst (transl_nth conf "surname/surnames" 0)) fx
-      (transl conf "specify")
-  in
+  let x = match homonymes with x :: _ -> x | _ -> x in
+  let title = mk_specify_title conf (transl_nth conf "surname/surnames" 0) fx in
   Hutil.header conf title;
   Hutil.print_link_to_welcome conf true;
   let list =
-    List.map
-      (fun sn ->
-         let txt = Util.surname_without_particle base sn ^ Util.surname_particle base sn in
-         let ord = name_unaccent txt in ord, txt, sn)
-      homonymes
+    List.map begin fun sn ->
+      let txt = Util.surname_without_particle base sn ^ Util.surname_particle base sn in
+      let ord = name_unaccent txt in
+      ord, txt, sn
+    end homonymes
   in
   let list = List.sort compare list in
   let access txt sn =
-    geneweb_link conf ("m=N&v=" ^ Mutil.encode sn ^ "&t=N") txt
+    geneweb_link conf
+      ("m=N&v=" ^<^ Mutil.encode sn ^>^ "&t=N" :> Adef.escaped_string)
+      (escape_html txt :> Adef.safe_string)
   in
-  buttons_fnames conf;
   Util.wprint_in_columns conf (fun (ord, _, _) -> ord)
     (fun (_, txt, sn) -> Output.print_string conf (access txt sn)) list;
-  Output.print_string conf "<p>\n";
-  Output.print_string conf "<em style=\"font-size:80%%\">\n";
-  Output.printf conf "%s " (Utf8.capitalize_fst (transl conf "click"));
-  Output.printf conf "<a href=\"%sm=N&o=i&v=%s\">%s</a>\n" (commd conf)
-    (if List.length homonymes = 1 then Mutil.encode x ^ "&t=A"
-     else Mutil.encode fx)
-    (transl conf "here");
-  Output.print_string conf (transl conf "for the first names by alphabetic order");
-  Output.print_string conf ".</em>\n";
-  Output.print_string conf "</p>\n";
+  Output.print_sstring conf {|<p><em style="font-size:80%">|};
+  Output.print_sstring conf (Utf8.capitalize_fst (transl conf "click"));
+  Output.print_sstring conf {| <a href="|} ;
+  Output.print_string conf (commd conf) ;
+  Output.print_sstring conf {|m=N&o=i&t=A&v=|} ;
+  Output.print_string conf
+    (if List.length homonymes = 1 then Mutil.encode x else Mutil.encode fx) ;
+  Output.print_sstring conf {|">|} ;
+  Output.print_sstring conf (transl conf "here") ;
+  Output.print_sstring conf {|</a> |} ;
+  Output.print_sstring conf (transl conf "for the first names by alphabetic order");
+  Output.print_sstring conf ".</em></p>";
   Hutil.trailer conf
 
 let print_family_alphabetic x conf base liste =
@@ -756,13 +746,16 @@ let print_family_alphabetic x conf base liste =
   | _ ->
       let title h =
         let access x =
-          if h || List.length homonymes = 1 then x
-          else geneweb_link conf ("m=N&o=i&v=" ^ Mutil.encode x ^ "&t=A") x
+          if h || List.length homonymes = 1 then (Util.escape_html x :> Adef.safe_string)
+          else
+            geneweb_link conf
+              ("m=N&o=i&v=" ^<^ Mutil.encode x ^>^ "&t=A" :> Adef.escaped_string)
+              (escape_html x :> Adef.safe_string)
         in
-        Mutil.list_iter_first
-          (fun first x ->
-             Output.printf conf "%s%s" (if first then "" else ", ") (access x))
-          homonymes
+        Mutil.list_iter_first begin fun first x ->
+          if not first then Output.print_sstring conf ", " ;
+          Output.print_string conf (access x)
+        end homonymes
       in
       Hutil.header conf title;
       Hutil.print_link_to_welcome conf true;

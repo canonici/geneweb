@@ -34,15 +34,16 @@ let new_print_source conf base fname =
   in
   match channel with
     Some ic ->
-      let title _ = Output.print_string conf fname in
+      let title _ = Output.print_string conf (Util.escape_html fname) in
       Hutil.header_without_page_title conf title;
-      SrcfileDisplay.copy_from_stream conf base
-        (Stream.of_channel ic) SrcfileDisplay.Source;
-      Hutil.gen_trailer true conf
+      SrcfileDisplay.copy_from_stream conf base (Stream.of_channel ic) SrcfileDisplay.Source;
+      Hutil.trailer conf
   | _ ->
       let title _ = Output.printf conf "Error" in
       Hutil.header conf title;
-      Output.printf conf "<ul><li>Cannot access file \"%s.txt\"</ul>" fname;
-      Hutil.gen_trailer true conf;
+      Output.print_sstring conf "<ul><li>Cannot access file \"" ;
+      Output.print_string conf (Util.escape_html fname) ;
+      Output.print_sstring conf ".txt\"</ul>" ;
+      Hutil.trailer conf;
       raise Exit
 

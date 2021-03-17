@@ -381,12 +381,12 @@ let print_place_list conf opt long link_to_ind max_rlm_nbr pl_l =
         in
         Output.printf conf
           "<a href=\"%sm=PS%s%s%s\" title=\"%s\">%s</a>"
-            (commd conf) opt ("&k=" ^ (Mutil.encode p2))
+            (commd conf :> string) opt ("&k=" ^ (Mutil.encode p2 :> string))
             (if not long then "&display=long" else "&display=short") title (p1) ;
         if link_to_ind && cnt < max_rlm_nbr then
           begin
-          Output.printf conf " (<a href=\"%sm=L%s%s&nb=%d%s" (commd conf)
-            ("&k=" ^ (Mutil.encode so)) opt cnt
+          Output.printf conf " (<a href=\"%sm=L%s%s&nb=%d%s" (commd conf :> string)
+            ("&k=" ^ (Mutil.encode so :> string)) opt cnt
             (if max_rlm <> "" then "&max_rlm_nbr=" ^ max_rlm else "") ;
           let rec loop3 cnt =
             function
@@ -483,15 +483,15 @@ let print_html_places_surnames conf base max_rlm_nbr link_to_ind
     (* Warn : do same sort_uniq in short mode *)
     let ips = List.sort_uniq compare ips in
     let len = List.length ips in
-    Output.printf conf "<a href=\"%s" (commd conf);
+    Output.printf conf "<a href=\"%s" (commd conf :> string);
     if link_to_ind && len = 1
     then Output.print_string conf (acces conf base @@ pget conf base @@ List.hd ips)
-    else Output.printf conf "m=N&v=%s" (Mutil.encode sn);
+    else Output.printf conf "m=N&v=%s" (Mutil.encode sn :> string);
     Output.printf conf "\">%s</a>" sn;
     if link_to_ind && List.length ips < max_rlm_nbr then
       begin
-        Output.printf conf " (<a href=\"%sm=L%s%s&nb=%d" (commd conf)
-          ("&k=" ^ (Mutil.encode so))
+        Output.printf conf " (<a href=\"%sm=L%s%s&nb=%d" (commd conf :> string)
+          ("&k=" ^ (Mutil.encode so :> string))
           opt len ;
         Output.printf conf "&p0=%s" so ;
         List.iteri (fun i ip ->
@@ -530,7 +530,7 @@ let print_html_places_surnames conf base max_rlm_nbr link_to_ind
           match prev, pl with
           | [], l2 -> List.iter (fun x ->
               let str = Printf.sprintf "<a href=\"%sm=PS%s%s\">%s</a>\n"
-                (commd conf) ("&k=" ^ k) opt x in
+                (commd conf :> string) ("&k=" ^ k) opt x in
               Output.printf conf "<li>%s<ul>\n" str) l2
           | x1 :: l1, x2 :: l2 ->
               if x1 = x2 then loop1 l1 l2
@@ -582,17 +582,18 @@ let print_all_places_surnames_short conf base ~add_birth ~add_baptism ~add_death
       max_int
   in
   Array.sort (fun (s1, _) (s2, _) -> Gutil.alphabetic_order s1 s2) array ;
-  let title _ = Output.print_string conf (Utf8.capitalize (transl conf "place")) in
+  let title _ = Output.print_sstring conf (Utf8.capitalize (transl conf "place")) in
   print_aux conf title begin fun () ->
     let opt = print_aux_opt ~add_birth ~add_baptism ~add_death ~add_burial ~add_marriage in
     Output.printf conf
       "<p><a href=\"%sm=PS%s&display=long\">%s</a></p><p>"
-      (commd conf) opt (transl conf "long display") ;
+      (commd conf :> string) opt (transl conf "long display") ;
     let last = Array.length array - 1 in
     Array.iteri
       (fun i (s, x) ->
          Output.printf conf "<a href=\"%sm=PS%s&k=%s\">%s</a> (%d)%s"
-           (commd conf) opt (Mutil.encode s) s x (if i = last then "" else ",\n"))
+           (commd conf :> string) opt (Mutil.encode s :> string) s x
+           (if i = last then "" else ",\n"))
       array ;
     Output.printf conf "</p>\n"
   end
@@ -646,29 +647,27 @@ let print_all_places_surnames_long conf base _ini ~add_birth ~add_baptism
   let max_rlm_nbr =
     match p_getenv conf.env "max_rlm_nbr" with
     | Some n -> if n = "" then
-        match p_getenv conf.base_env "max_rlm_nbr" with
+        match List.assoc_opt "max_rlm_nbr" conf.base_env with
         | Some n ->
           if n = "" then 80 else int_of_string n
         | None -> 80
         else int_of_string n
     | None ->
-        match p_getenv conf.base_env "max_rlm_nbr" with
+        match List.assoc_opt "max_rlm_nbr" conf.base_env with
         | Some n ->
           if n = "" then 80 else int_of_string n
         | None -> 80
   in
   let link_to_ind =
-    match p_getenv conf.base_env "place_surname_link_to_ind" with
+    match List.assoc_opt "place_surname_link_to_ind" conf.base_env with
     | Some "yes" -> true
     | _ -> false
   in
-  let t = if short then (Printf.sprintf "%s" (Utf8.capitalize
-    (transl conf "list too long"))) else ""
-  in
+  let t = if short then Utf8.capitalize (transl conf "list too long") else "" in
   let href =
     if short then ""
     else
-      Printf.sprintf "href=\"%sm=PS%s%s%s\" title=\"%s\"" (commd conf) opt
+      Printf.sprintf "href=\"%sm=PS%s%s%s\" title=\"%s\"" (commd conf :> string) opt
       (if long then "&display=short" else "&display=long")
       (  match p_getenv conf.env "k" with
         | Some ini -> "&k=" ^ ini
@@ -708,6 +707,6 @@ let print_all_places_surnames conf base =
     print_all_places_surnames_long conf base ini ~add_birth ~add_baptism
       ~add_death ~add_burial ~add_marriage lim false filter
   with List_too_long ->
-    let conf = {conf with env = ("display", "short") :: conf.env} in
+    let conf = {conf with env = ("display", Adef.encoded "short") :: conf.env} in
     print_all_places_surnames_long conf base ini ~add_birth ~add_baptism
       ~add_death ~add_burial ~add_marriage lim true filter

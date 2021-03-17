@@ -2,16 +2,16 @@
 
 (* module [Wserver]: elementary web service *)
 
-(** [Wserver.f syslog addr port tmout maxc g]
+(** [ Wserver.f syslog addr port tmout maxc g ]
     Starts an elementary httpd server at port [port] in the current
     machine. The variable [addr] is [Some the-address-to-use] or
     [None] for any of the available addresses of the present machine.
     The port number is any number greater than 1024 (to create a
     client < 1024, you must be root). At each connection, the function
-    [g] is called: [g (addr, request) scr cont] where [addr] is the
-    client identification socket, [request] the browser request, [scr]
-    the script name (extracted from [request]) and [cont] the stdin
-    contents . The function [g] has [tmout] seconds to answer some
+    [g] is called: [g (addr, request) path query] where [addr] is the
+    client identification socket, [request] the browser request, [path]
+    the part of the [request] before the query part and [query] the query content.
+    The function [g] has [tmout] seconds to answer some
     text on standard output. If [maxc] is [Some n], maximum [n]
     clients can be treated at the same time; [None] means no limit.
     [syslog] is the function used to log errors or debug info. It is
@@ -27,7 +27,7 @@ val f
   -> int
   -> int
   -> int option
-  -> (Unix.sockaddr * string list -> string -> string -> unit)
+  -> (Unix.sockaddr * string list -> string -> Adef.encoded_string -> unit)
   -> unit
 
 val close_connection : unit -> unit
@@ -52,7 +52,7 @@ val http_redirect_temporarily : string -> unit
     (* [Output.status conf_redirect url] sends the http header where [url]
        represents the Location where the request needs to be redirected. *)
 
-val get_request_and_content : char Stream.t -> string list * string
+val get_request_and_content : char Stream.t -> string list * Adef.encoded_string
 
 val wsocket : unit -> Unix.file_descr
 val woc : unit -> out_channel
@@ -77,7 +77,7 @@ val cgi : bool ref
           None 2371 60 None
           (fun _ s _ ->
              Output.status conf Wserver.OK;
-             Output.print_string conf "You said: %s...\n" s);;
+             Output.print_sstring conf "You said: %s...\n" s);;
    - Compilation:
         ocamlc -custom unix.cma -cclib -lunix wserver.cmo foo.ml
    - Run:
