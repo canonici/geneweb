@@ -360,7 +360,7 @@ let try_plugin list conf base m =
 let w_lock ~onerror fn conf base =
   let bfile = Util.bpath (conf.bname ^ ".gwb") in
   Lock.control
-    (Mutil.lock_file bfile) false
+    (Files.lock_file bfile) false
     ~onerror:(fun () -> onerror conf base)
     (fun () -> fn conf base)
 
