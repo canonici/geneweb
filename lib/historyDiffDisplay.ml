@@ -86,7 +86,7 @@ let print_clean_ok conf =
       let history = load_person_history conf f in
       let new_history = clean_history 0 history [] in
       let fname = history_path conf f in
-      if new_history = [] then Mutil.rm fname
+      if new_history = [] then Files.rm fname
       else
         begin let ext_flags =
           [Open_wronly; Open_trunc; Open_creat; Open_binary; Open_nonblock]

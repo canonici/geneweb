@@ -176,7 +176,7 @@ let load_lexicon =
     | Some lex -> lex
     | None ->
       let lex =
-        Mutil.read_or_create_value ~wait:true ~magic:Mutil.random_magic fname
+        Files.read_or_create_value ~wait:true ~magic:Mutil.random_magic fname
           begin fun () ->
             let ht = Hashtbl.create 0 in
             let rec rev_iter fn = function
@@ -1696,7 +1696,7 @@ let geneweb_server () =
             null_reopen [Unix.O_WRONLY] Unix.stderr
           end
         else exit 0;
-       Mutil.mkdir_p ~perm:0o777 (Filename.concat !Util.cnt_dir "cnt")
+       Files.mkdir_p ~perm:0o777 (Filename.concat !Util.cnt_dir "cnt")
     end;
   Wserver.f GwdLog.syslog !selected_addr !selected_port !conn_timeout
     (if Sys.unix then !max_clients else None) connection
@@ -1783,7 +1783,7 @@ let slashify s =
   String.init (String.length s) conv_char
 
 let make_cnt_dir x =
-  Mutil.mkdir_p x;
+  Files.mkdir_p x;
   if Sys.unix then ()
   else
     begin
