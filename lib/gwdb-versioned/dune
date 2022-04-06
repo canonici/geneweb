@@ -5,4 +5,11 @@
   (libraries
 	geneweb.gwdb-legacy
   )
+  (modules
+	gwdb_driver
+  	dsk_format
+	format
+	partition
+	version
+  )
 )
