@@ -2,11 +2,10 @@
   (name gwdb_legacy)
   (public_name geneweb.gwdb-legacy)
   (libraries
-;;    geneweb.def
-      geneweb.def-legacy
+      geneweb.def
       geneweb.util
       geneweb.system_util
-;;    re
+      re
       unix
   )
   (modules_without_implementation dbdisk)

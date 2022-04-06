@@ -1,6 +1,0 @@
-(library
- (name geneweb_def_legacy)
- (public_name geneweb.def-legacy)
- (modules adef_legacy def_legacy)
- (wrapped false)
-)
