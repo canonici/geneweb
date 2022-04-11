@@ -1,6 +1,7 @@
 (library
  (name geneweb_def)
  (public_name geneweb.def)
- (modules adef def)
+ (libraries re)
+ (modules adef def gwdb_driver_sig common)
  (wrapped false)
 )
