@@ -257,6 +257,11 @@ let rec reconstitute_pevents conf ext cnt =
                 | Some "othe" -> c, Witness_Other
                 | _           -> c, Witness
               in
+              (* WNOTES TODO GET ACTUAL WNOTE *)
+              let c =
+                let c, wk = c in
+                c, wk, ""
+              in
               let var_w =
                 "e" ^ string_of_int cnt ^ "_ins_witn" ^ string_of_int i
               in
@@ -272,7 +277,7 @@ let rec reconstitute_pevents conf ext cnt =
                         if n = 0 then c :: witnesses, true
                         else
                           let new_witn =
-                            ("", "", 0, Update.Create (Neuter, None), ""), wk
+                            ("", "", 0, Update.Create (Neuter, None), ""), wk, ""
                           in
                           let witnesses = new_witn :: witnesses in
                           loop_witn (n - 1) witnesses
@@ -280,7 +285,7 @@ let rec reconstitute_pevents conf ext cnt =
                       loop_witn n witnesses
                   | _ ->
                       let new_witn =
-                        ("", "", 0, Update.Create (Neuter, None), ""), wk
+                        ("", "", 0, Update.Create (Neuter, None), ""), wk, ""
                       in
                       c :: new_witn :: witnesses, true
                   end
@@ -301,7 +306,7 @@ let rec reconstitute_pevents conf ext cnt =
                   if n = 0 then witnesses, true
                   else
                     let new_witn =
-                      ("", "", 0, Update.Create (Neuter, None), ""), wk
+                      ("", "", 0, Update.Create (Neuter, None), ""), wk, ""
                     in
                     let witnesses = new_witn :: witnesses in
                     loop_witn (n - 1) witnesses
@@ -309,7 +314,7 @@ let rec reconstitute_pevents conf ext cnt =
                 loop_witn n witnesses
             | _ ->
                 let new_witn =
-                  ("", "", 0, Update.Create (Neuter, None), ""), wk
+                  ("", "", 0, Update.Create (Neuter, None), ""), wk, ""
                 in
                 new_witn :: witnesses, true
             end
@@ -735,7 +740,7 @@ let strip_pevents p =
   let strip_array_witness pl =
     let pl =
       Array.fold_right
-        (fun ((f, _, _, _, _), _ as p) pl -> if f = "" then pl else p :: pl)
+        (fun ((f, _, _, _, _), _, _ as p) pl -> if f = "" then pl else p :: pl)
         pl []
     in
     Array.of_list pl
@@ -811,7 +816,7 @@ let rparents_of rparents =
 let pwitnesses_of pevents =
   List.fold_left
     (fun ipl e ->
-       Array.fold_left (fun ipl (ip, _) -> ip :: ipl) ipl
+       Array.fold_left (fun ipl (ip, _, _) -> ip :: ipl) ipl
          e.epers_witnesses)
     [] pevents
 
@@ -894,8 +899,8 @@ let update_relations_of_related base ip old_related =
            (fun e (list, rad) ->
               let (witnesses, rad) =
                 Array.fold_right
-                  (fun (ip2, k) (accu, rad) ->
-                     if ip2 = ip then accu, true else (ip2, k) :: accu, rad)
+                  (fun (ip2, k, wnotes) (accu, rad) ->
+                     if ip2 = ip then accu, true else (ip2, k, wnotes) :: accu, rad)
                   e.epers_witnesses ([], rad)
               in
               let e = {e with epers_witnesses = Array.of_list witnesses} in
