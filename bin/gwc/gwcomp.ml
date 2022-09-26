@@ -39,7 +39,7 @@ type gw_syntax =
       * sex
       * (somebody * sex) list
       * (string gen_fam_event_name * cdate * string * string * string *
-          string * (somebody * sex * witness_kind) list) list
+          string * (somebody * sex * witness_kind * string) list) list
       * ((iper, iper, string) gen_person, ifam, string) gen_family
       * (iper, iper, string) gen_person gen_descend
   (** Block that defines personal notes. First element represents
@@ -60,7 +60,7 @@ type gw_syntax =
       somebody
       * sex
       * (string gen_pers_event_name * cdate * string * string * string *
-           string * (somebody * sex * witness_kind) list) list
+           string * (somebody * sex * witness_kind * string) list) list
   (** Block that defines database notes and extended pages.
       First string represents name of extended page ("" for
       database notes, only one for file). Second is note's
@@ -1011,7 +1011,7 @@ let loop_witn line ic =
       let (wkind, l) = get_event_witness_kind l in
       let (wk, _, l) = parse_parent str l in
       if l <> [] then failwith str;
-      loop_witn ((wk, sex, wkind) :: acc) (input_a_line ic)
+      loop_witn ((wk, sex, wkind, "") :: acc) (input_a_line ic)
     | _ -> (List.rev acc, str)
   in
   loop_witn [] line
